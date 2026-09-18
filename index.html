@@ -86,6 +86,20 @@
     color:var(--muted);cursor:pointer;font-size:.85rem;padding:2px;
   }
   .task .del:hover{color:#e06060}
+  .task .note-btn{
+    position:absolute;top:5px;right:28px;border:none;background:transparent;
+    color:var(--muted);cursor:pointer;font-size:.8rem;padding:2px;
+  }
+  .task .note-btn.has{color:var(--accent)}
+  .note-prev{
+    margin-top:6px;font-size:.76rem;color:var(--muted);white-space:pre-wrap;word-break:break-word;
+    border-left:2px solid var(--line);padding-left:7px;
+  }
+  .note-edit{
+    width:100%;margin-top:8px;min-height:64px;resize:vertical;
+    padding:8px 10px;font-size:.8rem;font-family:inherit;line-height:1.45;
+    background:var(--panel);color:var(--text);border:1px solid var(--accent);border-radius:8px;outline:none;
+  }
 
   /* overdue strip */
   .overdue-card{border-color:var(--p0)}
@@ -97,7 +111,7 @@
   /* add form */
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
   .field label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:5px}
-  .field input,.field select{
+  .field input,.field select,.field textarea{
     width:100%;padding:10px 12px;font-size:.95rem;font-family:inherit;
     background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:10px;outline:none;
   }
@@ -181,6 +195,8 @@
         <input type="text" id="tNewCourse" maxlength="40"></div>
       <div class="field"><label data-i18n="lblDue">Due date</label>
         <input type="date" id="tDue"></div>
+      <div class="field field-wide"><label data-i18n="lblNotes">Notes (optional)</label>
+        <textarea id="tNotes" rows="2" data-i18n-ph="phNotes" placeholder="What's done / what's left…"></textarea></div>
     </div>
     <button class="btn" id="tAdd" data-i18n="btnAdd">＋ Add task</button>
     <div class="chips" id="courseChips"></div>
@@ -210,6 +226,7 @@
       lblDue:"Due date", btnAdd:"＋ Add task",
       valErr:"Fill in the task, course and date.",
       delCourseConfirm:"Remove this course from the list? Existing tasks keep it.",
+      lblNotes:"Notes (optional)", phNotes:"What's done / what's left…",
       allHw:"📚 All homework", allExam:"📝 All exams", allProject:"🛠 All projects",
       doneLbl:"✓ Done", notDoneLbl:"✗ Not done",
       weekdays:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
@@ -226,6 +243,7 @@
       lblDue:"Fecha límite", btnAdd:"＋ Añadir",
       valErr:"Rellena la tarea, la asignatura y la fecha.",
       delCourseConfirm:"¿Quitar esta asignatura de la lista? Las tareas existentes la conservan.",
+      lblNotes:"Notas (opcional)", phNotes:"Qué está hecho / qué falta…",
       allHw:"📚 Todos los deberes", allExam:"📝 Todos los exámenes", allProject:"🛠 Todos los proyectos",
       doneLbl:"✓ Hecho", notDoneLbl:"✗ Pendiente",
       weekdays:["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"],
@@ -242,6 +260,7 @@
       lblDue:"截止日期", btnAdd:"＋ 添加任务",
       valErr:"请填写任务、课程和日期。",
       delCourseConfirm:"从列表移除该课程？已有任务不受影响。",
+      lblNotes:"备注（可选）", phNotes:"做到哪了 / 还差什么…",
       allHw:"📚 全部作业", allExam:"📝 全部考试", allProject:"🛠 全部 Projects",
       doneLbl:"✓ 已完成", notDoneLbl:"✗ 未完成",
       weekdays:["周一","周二","周三","周四","周五","周六","周日"],
@@ -268,7 +287,7 @@
     overdueCard:$("overdueCard"), overdueList:$("overdueList"), week:$("week"),
     tTitle:$("tTitle"), tType:$("tType"), tCourse:$("tCourse"),
     newCourseField:$("newCourseField"), tNewCourse:$("tNewCourse"),
-    tDue:$("tDue"), tAdd:$("tAdd"), chips:$("courseChips")
+    tDue:$("tDue"), tNotes:$("tNotes"), tAdd:$("tAdd"), chips:$("courseChips")
   };
 
   function tasks(){ return getJSON(K_TASKS,[]); }
@@ -276,6 +295,8 @@
   function courses(){ return getJSON(K_COURSES,[]); }
   function saveCourses(a){ setJSON(K_COURSES,a); }
   function uid(){ return Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7); }
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  var editingNoteId=null;
 
   /* ── dates (Monday-start weeks, local time) ── */
   function fmt(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
@@ -321,14 +342,18 @@
     var cls = isExam ? (done?"p100":"p0") : pClass(task.progress);
     var progLabel = isExam ? t(done?"doneLbl":"notDoneLbl") : task.progress+"%";
     var dueCls = (task.due<todayStr() && !done) ? "" : " future";
+    var editing = editingNoteId===task.id;
     return '<div class="task '+cls+'" data-id="'+task.id+'">'
       + '<button class="del" data-del="'+task.id+'">✕</button>'
+      + '<button class="note-btn'+(task.notes?' has':'')+'" data-note-toggle="'+task.id+'">'+(editing?'✓':'📝')+'</button>'
       + '<div class="title">'+task.title+'</div>'
       + '<div class="meta">'
       +   '<span class="badge '+typeCls+'">'+t(TYPE_KEY[task.type]||"typeHw")+'</span>'
       +   (task.course? '<span class="badge course">'+task.course+'</span>' : '')
       +   (showDue? '<span class="due-tag'+dueCls+'">'+task.due+'</span>' : '')
       + '</div>'
+      + (task.notes && !editing ? '<div class="note-prev">'+esc(task.notes)+'</div>' : '')
+      + (editing ? '<textarea class="note-edit" data-note="'+task.id+'" placeholder="'+esc(t("phNotes"))+'">'+esc(task.notes||"")+'</textarea>' : '')
       + '<button class="prog-btn '+cls+'" data-prog="'+task.id+'">'+progLabel+'</button>'
       + '</div>';
   }
@@ -336,6 +361,7 @@
   /* ── render ── */
   function render(){
     var all=tasks();
+    if(editingNoteId && !all.some(function(x){ return x.id===editingNoteId; })) editingNoteId=null;
     var mon=mondayOf(new Date());
     mon.setDate(mon.getDate()+weekOffset*7);
     var days=[];
@@ -411,15 +437,35 @@
     }
     if(!title || !due || !course){ alert(t("valErr")); return; }
     var a=tasks();
-    a.push({ id:uid(), title:title, type:el.tType.value, course:course, due:due, progress:0 });
+    a.push({ id:uid(), title:title, type:el.tType.value, course:course, due:due, progress:0,
+             notes:(el.tNotes.value||"").trim() });
     saveTasks(a);
-    el.tTitle.value=""; el.tNewCourse.value="";
+    el.tTitle.value=""; el.tNewCourse.value=""; el.tNotes.value="";
     el.tCourse.value=course;
     render();
   });
 
   // delegated: progress cycle + delete (both grid and overdue list)
+  document.addEventListener("input",function(e){
+    var ta=e.target && e.target.getAttribute && e.target.getAttribute("data-note")? e.target : null;
+    if(!ta) return;
+    var a=tasks();
+    var x=a.find(function(y){ return y.id===ta.getAttribute("data-note"); });
+    if(x){ x.notes=ta.value; saveTasks(a); }   // save only — no render, so typing keeps focus
+  });
+
   document.addEventListener("click",function(e){
+    var nb=e.target.closest("[data-note-toggle]");
+    if(nb){
+      var nid=nb.getAttribute("data-note-toggle");
+      editingNoteId = editingNoteId===nid ? null : nid;
+      render();
+      if(editingNoteId){
+        var ta=document.querySelector('[data-note="'+nid+'"]');
+        if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      }
+      return;
+    }
     var pb=e.target.closest("[data-prog]");
     if(pb){
       var a=tasks();
